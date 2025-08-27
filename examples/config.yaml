@@ -1,0 +1,35 @@
+# EclairCP Configuration Example
+# This file shows how to configure MCP servers for testing
+
+servers:
+  aws-docs:
+    command: "uvx"
+    args: ["awslabs.aws-documentation-mcp-server@latest"]
+    description: "AWS Documentation MCP Server"
+    env:
+      FASTMCP_LOG_LEVEL: "ERROR"
+    timeout: 30
+    retry_attempts: 3
+  
+  github:
+    command: "uvx"
+    args: ["github-mcp-server"]
+    description: "GitHub MCP Server"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    timeout: 45
+    retry_attempts: 2
+  
+  strands:
+    command: "uvx"
+    args: ["strands-mcp-server"]
+    description: "Strands MCP Server"
+    timeout: 30
+    retry_attempts: 3
+
+# Optional default session configuration
+default_session:
+  server_name: "aws-docs"
+  model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+  system_prompt: "You are a helpful assistant for testing MCP servers. Be concise and helpful."
+  max_context_length: 100000
