@@ -4,26 +4,56 @@ This directory contains example configuration files and usage scenarios for Ecla
 
 ## Configuration Files
 
-### config.yaml
+This directory contains several example configurations for different use cases:
 
-The main configuration file that defines MCP servers and session settings. Copy this file to your desired location and modify it according to your needs.
+### config.yaml
+The comprehensive configuration file with multiple MCP servers and detailed comments. Best for learning all available options.
+
+### minimal-config.yaml
+The simplest possible configuration with just one server. Perfect for getting started quickly.
+
+### development-config.yaml
+Optimized for development and testing with local servers, debug settings, and shorter timeouts.
+
+### production-config.yaml
+Production-ready configuration with enhanced error handling, longer timeouts, and security considerations.
+
+Choose the configuration that best matches your use case and copy it to your desired location.
 
 #### Basic Usage
 
-1. Copy the example configuration:
+1. **Quick Start**: Copy the minimal configuration:
+   ```bash
+   cp examples/minimal-config.yaml config.yaml
+   eclaircp
+   ```
+
+2. **Full Setup**: Copy the comprehensive configuration:
    ```bash
    cp examples/config.yaml ~/.eclaircp/config.yaml
    ```
 
-2. Edit the configuration to match your environment:
-   - Set up environment variables (like GITHUB_TOKEN)
-   - Modify server configurations as needed
-   - Adjust timeout and retry settings
-
-3. Run EclairCP with your configuration:
+3. **Development**: Use the development configuration:
    ```bash
-   eclaircp --config ~/.eclaircp/config.yaml
+   cp examples/development-config.yaml dev-config.yaml
+   eclaircp --config dev-config.yaml
    ```
+
+4. **Production**: Use the production configuration:
+   ```bash
+   cp examples/production-config.yaml prod-config.yaml
+   # Set required environment variables
+   export GITHUB_TOKEN="your_token"
+   export STRANDS_API_KEY="your_key"
+   eclaircp --config prod-config.yaml
+   ```
+
+#### Configuration Selection Guide
+
+- **New users**: Start with `minimal-config.yaml`
+- **Developers**: Use `development-config.yaml` for local testing
+- **Production use**: Use `production-config.yaml` with proper security
+- **Learning**: Explore `config.yaml` for all available options
 
 #### Server Configuration
 

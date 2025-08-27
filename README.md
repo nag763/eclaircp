@@ -13,13 +13,73 @@ EclairCP is a Python-based CLI tool designed to test and interact with remote Mo
 - 🎨 **Rich UI**: Beautiful terminal output with syntax highlighting and formatting
 - 🔄 **Session Management**: Context-aware conversations without file persistence
 
+## Installation
+
+### Prerequisites
+
+- Python 3.10 or higher
+- [UV package manager](https://docs.astral.sh/uv/getting-started/installation/) (recommended)
+
+### Install from GitHub
+
+```bash
+# Using UV (recommended)
+uv tool install git+https://github.com/nag763/eclaircp.git
+
+# Using pip
+pip install git+https://github.com/nag763/eclaircp.git
+```
+
+### Development Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/nag763/eclaircp.git
+cd eclaircp
+
+# Install with UV
+uv sync
+
+# Activate the virtual environment
+source .venv/bin/activate  # Linux/macOS
+# or
+.venv\Scripts\activate     # Windows
+
+# Run the tool
+uv run eclaircp
+```
+
 ## Quick Start
 
-*Installation and usage instructions will be added as the project develops.*
+1. **Create a configuration file** (see [Configuration](#configuration) section below)
+2. **Run EclairCP**:
+   ```bash
+   eclaircp --config config.yaml
+   ```
+3. **Select an MCP server** from your configuration
+4. **Start chatting** with the connected MCP server through the elegant streaming interface
+
+### Basic Usage
+
+```bash
+# Show help
+eclaircp --help
+
+# Use default configuration (looks for config.yaml in current directory)
+eclaircp
+
+# Specify a configuration file
+eclaircp --config /path/to/your/config.yaml
+
+# Interactive server selection
+eclaircp --interactive
+```
 
 ## Configuration
 
-EclairCP uses YAML configuration files to manage MCP server connections:
+EclairCP uses YAML configuration files to manage MCP server connections. Create a `config.yaml` file in your working directory or specify a path with `--config`.
+
+### Basic Configuration
 
 ```yaml
 servers:
@@ -29,6 +89,8 @@ servers:
     description: "AWS Documentation MCP Server"
     env:
       FASTMCP_LOG_LEVEL: "ERROR"
+    timeout: 30
+    retry_attempts: 3
   
   github:
     command: "uvx"
@@ -36,7 +98,130 @@ servers:
     description: "GitHub MCP Server"
     env:
       GITHUB_TOKEN: "${GITHUB_TOKEN}"
+    timeout: 45
+    retry_attempts: 2
+
+default_session:
+  server_name: "aws-docs"
+  model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+  system_prompt: "You are a helpful assistant for testing MCP servers."
+  max_context_length: 100000
 ```
+
+### Configuration Options
+
+#### Server Configuration
+- `command`: The command to run the MCP server (e.g., "uvx", "python", "node")
+- `args`: List of arguments to pass to the command
+- `description`: Human-readable description of the server
+- `env`: Environment variables to set when running the server
+- `timeout`: Connection timeout in seconds (default: 30)
+- `retry_attempts`: Number of connection retry attempts (default: 3)
+
+#### Session Configuration
+- `server_name`: Default server to connect to
+- `model`: Strands agent model to use
+- `system_prompt`: System prompt for the agent
+- `max_context_length`: Maximum context length for conversations
+
+### Example Configurations
+
+#### Local MCP Server
+```yaml
+servers:
+  local-server:
+    command: "python"
+    args: ["-m", "my_mcp_server"]
+    description: "Local development MCP server"
+    env:
+      DEBUG: "true"
+```
+
+#### Docker-based MCP Server
+```yaml
+servers:
+  docker-server:
+    command: "docker"
+    args: ["run", "--rm", "-i", "my-mcp-server:latest"]
+    description: "Dockerized MCP server"
+```
+
+## Usage Examples
+
+### Interactive Session
+
+```bash
+$ eclaircp
+🚀 EclairCP - Elegant MCP Server Testing
+
+Available servers:
+1. aws-docs - AWS Documentation MCP Server
+2. github - GitHub MCP Server
+
+Select a server (1-2): 1
+
+✅ Connected to aws-docs
+🔧 Available tools: read_documentation, search_documentation, recommend
+
+💬 Start your conversation (type 'exit' to quit):
+
+> How do I create an S3 bucket?
+
+🤖 I'll help you learn about creating S3 buckets. Let me search the AWS documentation...
+
+[Tool: search_documentation]
+Arguments: {"search_phrase": "create S3 bucket"}
+
+📚 Based on the AWS documentation, here's how to create an S3 bucket...
+```
+
+### Batch Testing
+
+```bash
+# Test multiple servers quickly
+eclaircp --test-all
+
+# Test specific server
+eclaircp --test aws-docs
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### "Command not found: uvx"
+Install UV package manager:
+```bash
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+#### "Failed to connect to MCP server"
+1. Check that the server command and arguments are correct
+2. Verify environment variables are set (e.g., `GITHUB_TOKEN`)
+3. Increase timeout in configuration
+4. Check server logs for errors
+
+#### "Configuration validation error"
+- Ensure YAML syntax is correct
+- Check that all required fields are present
+- Validate environment variable references
+
+### Debug Mode
+
+Run with debug logging:
+```bash
+eclaircp --debug --config config.yaml
+```
+
+### Getting Help
+
+- Use `eclaircp --help` for command-line options
+- Type `help` during an interactive session for available commands
+- Check the [examples](examples/) directory for sample configurations
 
 ## Development Status
 

@@ -1,0 +1,50 @@
+# Production Configuration for EclairCP
+# This configuration is optimized for production use with robust error handling
+
+servers:
+  # AWS Documentation with production settings
+  aws-docs-prod:
+    command: "uvx"
+    args: ["awslabs.aws-documentation-mcp-server@latest"]
+    description: "AWS Documentation MCP Server (Production)"
+    env:
+      FASTMCP_LOG_LEVEL: "WARN"
+      PRODUCTION: "true"
+    timeout: 60
+    retry_attempts: 5
+
+  # GitHub with enhanced reliability
+  github-prod:
+    command: "uvx"
+    args: ["github-mcp-server"]
+    description: "GitHub MCP Server (Production)"
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      RATE_LIMIT_ENABLED: "true"
+    timeout: 90
+    retry_attempts: 5
+
+  # Strands documentation server
+  strands-docs:
+    command: "uvx"
+    args: ["strands-mcp-server"]
+    description: "Strands Documentation MCP Server"
+    env:
+      STRANDS_API_KEY: "${STRANDS_API_KEY}"
+    timeout: 45
+    retry_attempts: 3
+
+  # File system server with restricted access
+  secure-filesystem:
+    command: "uvx"
+    args: ["mcp-server-filesystem", "--base-path", "/var/mcp/workspace", "--read-only"]
+    description: "Secure File System MCP Server"
+    timeout: 30
+    retry_attempts: 3
+
+# Production session settings
+default_session:
+  server_name: "aws-docs-prod"
+  model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+  system_prompt: "You are a professional assistant for MCP server interactions. Provide accurate, helpful responses while maintaining security best practices."
+  max_context_length: 150000

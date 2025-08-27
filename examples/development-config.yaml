@@ -1,0 +1,40 @@
+# Development Configuration for EclairCP
+# This configuration is optimized for development and testing
+
+servers:
+  # Local development server
+  local-dev:
+    command: "python"
+    args: ["-m", "my_mcp_server", "--debug"]
+    description: "Local development MCP server"
+    env:
+      DEBUG: "true"
+      LOG_LEVEL: "debug"
+      DEV_MODE: "true"
+    timeout: 15
+    retry_attempts: 1
+
+  # Test server with mock responses
+  mock-server:
+    command: "python"
+    args: ["-m", "mock_mcp_server", "--port", "8080"]
+    description: "Mock MCP server for testing"
+    env:
+      MOCK_RESPONSES: "true"
+    timeout: 10
+    retry_attempts: 1
+
+  # Docker-based server
+  docker-server:
+    command: "docker"
+    args: ["run", "--rm", "-i", "-p", "3000:3000", "my-mcp-server:dev"]
+    description: "Dockerized MCP server for development"
+    timeout: 60
+    retry_attempts: 2
+
+# Development session settings
+default_session:
+  server_name: "local-dev"
+  model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+  system_prompt: "You are a development assistant. Help test and debug MCP server implementations."
+  max_context_length: 50000

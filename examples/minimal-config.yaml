@@ -1,0 +1,8 @@
+# Minimal EclairCP Configuration
+# This is the simplest possible configuration with just one server
+
+servers:
+  aws-docs:
+    command: "uvx"
+    args: ["awslabs.aws-documentation-mcp-server@latest"]
+    description: "AWS Documentation MCP Server"
