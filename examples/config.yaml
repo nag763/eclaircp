@@ -40,7 +40,7 @@ servers:
   # Access to Strands documentation and development tools
   strands:
     command: "uvx"
-    args: ["strands-mcp-server"]
+    args: ["strands-agents-mcp-server"]
     description: "Strands MCP Server - Access Strands documentation and development tools"
     timeout: 30
     retry_attempts: 2
