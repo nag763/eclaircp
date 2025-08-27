@@ -3,7 +3,7 @@ EclairCP configuration management module.
 """
 
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class MCPServerConfig(BaseModel):
@@ -17,13 +17,15 @@ class MCPServerConfig(BaseModel):
     timeout: int = Field(default=30, ge=1, le=300)
     retry_attempts: int = Field(default=3, ge=1, le=10)
     
-    @validator('command')
+    @field_validator('command')
+    @classmethod
     def validate_command(cls, v):
         if not v.strip():
             raise ValueError('Command cannot be empty')
         return v.strip()
     
-    @validator('args')
+    @field_validator('args')
+    @classmethod
     def validate_args(cls, v):
         return [arg.strip() for arg in v if arg.strip()]
 
@@ -36,7 +38,8 @@ class SessionConfig(BaseModel):
     system_prompt: str = "You are a helpful assistant for testing MCP servers."
     max_context_length: int = Field(default=100000, ge=1000, le=1000000)
     
-    @validator('server_name')
+    @field_validator('server_name')
+    @classmethod
     def validate_server_name(cls, v):
         if not v.strip():
             raise ValueError('Server name cannot be empty')
@@ -49,7 +52,8 @@ class ConfigFile(BaseModel):
     servers: Dict[str, MCPServerConfig]
     default_session: Optional[SessionConfig] = None
     
-    @validator('servers')
+    @field_validator('servers')
+    @classmethod
     def validate_servers(cls, v):
         if not v:
             raise ValueError('At least one server must be configured')
