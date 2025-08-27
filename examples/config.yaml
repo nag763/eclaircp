@@ -1,35 +1,75 @@
-# EclairCP Configuration Example
-# This file shows how to configure MCP servers for testing
+# EclairCP Configuration File
+# This file defines MCP servers that can be connected to for testing
+# 
+# Configuration Structure:
+# - servers: Dictionary of MCP server configurations
+# - default_session: Optional default session settings
+#
+# Each server configuration includes:
+# - command: The command to run the MCP server
+# - args: Arguments to pass to the command
+# - description: Human-readable description of the server
+# - env: Environment variables (optional)
+# - timeout: Connection timeout in seconds (default: 30)
+# - retry_attempts: Number of retry attempts (default: 3)
 
 servers:
+  # AWS Documentation MCP Server
+  # Provides access to AWS documentation search and retrieval
   aws-docs:
     command: "uvx"
     args: ["awslabs.aws-documentation-mcp-server@latest"]
-    description: "AWS Documentation MCP Server"
+    description: "AWS Documentation MCP Server - Search and read AWS documentation"
     env:
       FASTMCP_LOG_LEVEL: "ERROR"
     timeout: 30
     retry_attempts: 3
-  
+
+  # GitHub MCP Server
+  # Requires GITHUB_TOKEN environment variable for authentication
   github:
     command: "uvx"
     args: ["github-mcp-server"]
-    description: "GitHub MCP Server"
+    description: "GitHub MCP Server - Interact with GitHub repositories, issues, and PRs"
     env:
       GITHUB_TOKEN: "${GITHUB_TOKEN}"
     timeout: 45
-    retry_attempts: 2
-  
+    retry_attempts: 3
+
+  # Strands MCP Server (example)
+  # Access to Strands documentation and development tools
   strands:
     command: "uvx"
     args: ["strands-mcp-server"]
-    description: "Strands MCP Server"
+    description: "Strands MCP Server - Access Strands documentation and development tools"
     timeout: 30
-    retry_attempts: 3
+    retry_attempts: 2
 
-# Optional default session configuration
+  # Local MCP Server (example)
+  # Example of running a local MCP server for development
+  local-dev:
+    command: "python"
+    args: ["-m", "my_mcp_server"]
+    description: "Local development MCP server"
+    env:
+      DEBUG: "true"
+      LOG_LEVEL: "info"
+    timeout: 15
+    retry_attempts: 1
+
+  # File System MCP Server (example)
+  # Provides file system access capabilities
+  filesystem:
+    command: "uvx"
+    args: ["mcp-server-filesystem", "--base-path", "/tmp/mcp-workspace"]
+    description: "File System MCP Server - Safe file system operations"
+    timeout: 20
+    retry_attempts: 2
+
+# Default session configuration
+# This will be used when no specific session config is provided
 default_session:
-  server_name: "aws-docs"
+  server_name: "aws-docs"  # Must match one of the server names above
   model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-  system_prompt: "You are a helpful assistant for testing MCP servers. Be concise and helpful."
+  system_prompt: "You are a helpful assistant for testing MCP servers. Help users explore and test MCP server capabilities effectively."
   max_context_length: 100000
