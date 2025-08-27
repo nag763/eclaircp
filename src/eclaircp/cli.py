@@ -2,10 +2,11 @@
 EclairCP CLI module - Main entry point for the application.
 """
 
+import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import click
 from rich.console import Console
@@ -324,7 +325,7 @@ class CLIApp:
             self.console.print(f"[red]Configuration error: {e}[/red]")
             return False
 
-    def run(self, config_path: str, server_name: Optional[str] = None, 
+    async def run(self, config_path: str, server_name: Optional[str] = None, 
             list_servers: bool = False) -> int:
         """Main entry point for CLI execution.
         
@@ -344,18 +345,388 @@ class CLIApp:
         if not self.validate_config_file(config_path):
             return 1
         
-        # For now, show a placeholder message
-        # Full session management will be implemented in task 5
-        self.console.print("[bold green]EclairCP - Elegant CLI for testing MCP servers[/bold green]")
-        self.console.print(f"Using configuration: {config_path}")
+        try:
+            # Load configuration
+            config = self.config_manager.load_config(config_path)
+            
+            # Start the complete user workflow
+            return await self._run_interactive_session(config, server_name)
+            
+        except Exception as e:
+            self.console.print(f"[red]Unexpected error: {e}[/red]")
+            return 1
+
+    async def _run_interactive_session(self, config, server_name: Optional[str] = None) -> int:
+        """Run the complete interactive session workflow.
         
-        if server_name:
-            self.console.print(f"Target server: {server_name}")
+        Args:
+            config: Loaded configuration
+            server_name: Optional server name to connect to
+            
+        Returns:
+            Exit code (0 for success, non-zero for error)
+        """
+        from .mcp import MCPClientManager
+        from .session import SessionManager
+        from .ui import ServerSelector, StreamingDisplay, StatusDisplay
+        from .config import SessionConfig
         
-        self.console.print("\n[yellow]Session management will be implemented in the next phase.[/yellow]")
-        self.console.print("Configuration loaded successfully!")
+        # Initialize components
+        mcp_client = MCPClientManager()
+        server_selector = ServerSelector(self.console)
+        streaming_display = StreamingDisplay(self.console)
+        status_display = StatusDisplay(self.console)
         
-        return 0
+        try:
+            # Welcome message
+            self.console.print("[bold green]🌟 EclairCP - Elegant CLI for testing MCP servers[/bold green]")
+            self.console.print()  # Remove config_path reference as it's not available in this scope
+            
+            # Server selection flow
+            selected_server_name = await self._handle_server_selection(
+                config, server_name, server_selector, status_display
+            )
+            
+            if not selected_server_name:
+                return 1
+            
+            selected_server_config = config.servers[selected_server_name]
+            
+            # Connection flow
+            if not await self._handle_server_connection(
+                mcp_client, selected_server_config, status_display
+            ):
+                return 1
+            
+            # Session flow
+            return await self._handle_conversation_session(
+                mcp_client, selected_server_name, streaming_display, status_display
+            )
+            
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Session interrupted by user[/yellow]")
+            return 0
+        except Exception as e:
+            self.console.print(f"[red]Session error: {e}[/red]")
+            return 1
+        finally:
+            # Cleanup
+            if mcp_client.is_connected():
+                await mcp_client.disconnect()
+
+    async def _handle_server_selection(self, config, server_name: Optional[str], 
+                                     server_selector: 'ServerSelector', 
+                                     status_display: 'StatusDisplay') -> Optional[str]:
+        """Handle server selection flow.
+        
+        Args:
+            config: Configuration object
+            server_name: Optional pre-selected server name
+            server_selector: Server selector UI component
+            status_display: Status display component
+            
+        Returns:
+            Selected server name or None if selection failed
+        """
+        try:
+            if server_name:
+                # Validate provided server name
+                if server_name not in config.servers:
+                    self.console.print(f"[red]Server '{server_name}' not found in configuration[/red]")
+                    available_servers = list(config.servers.keys())
+                    self.console.print(f"Available servers: {', '.join(available_servers)}")
+                    return None
+                
+                self.console.print(f"✅ Using specified server: [bold cyan]{server_name}[/bold cyan]")
+                return server_name
+            else:
+                # Interactive server selection
+                self.console.print("[bold blue]📡 Server Selection[/bold blue]")
+                return server_selector.select_server(config.servers)
+                
+        except ValueError as e:
+            self.console.print(f"[red]Server selection error: {e}[/red]")
+            return None
+        except Exception as e:
+            self.console.print(f"[red]Unexpected error during server selection: {e}[/red]")
+            return None
+
+    async def _handle_server_connection(self, mcp_client: 'MCPClientManager', 
+                                      server_config: 'MCPServerConfig',
+                                      status_display: 'StatusDisplay') -> bool:
+        """Handle server connection flow.
+        
+        Args:
+            mcp_client: MCP client manager
+            server_config: Server configuration
+            status_display: Status display component
+            
+        Returns:
+            True if connection successful, False otherwise
+        """
+        try:
+            self.console.print(f"\n[bold blue]🔌 Connecting to {server_config.name}[/bold blue]")
+            
+            # Show server info
+            status_display.show_server_info(server_config)
+            
+            # Show loading indicator
+            with self.console.status(f"[bold green]Connecting to {server_config.name}..."):
+                success = await mcp_client.connect(server_config)
+            
+            if success:
+                # Show connection success
+                connection_status = mcp_client.get_connection_status()
+                status_display.show_connection_status(
+                    server_config.name,
+                    True,
+                    connection_time=connection_status.connection_time.isoformat() if connection_status.connection_time else None,
+                    available_tools=connection_status.available_tools
+                )
+                
+                # Show available tools
+                tools = await mcp_client.list_tools()
+                if tools:
+                    status_display.show_tools_list(tools)
+                
+                return True
+            else:
+                connection_status = mcp_client.get_connection_status()
+                status_display.show_connection_status(
+                    server_config.name,
+                    False,
+                    error_message=connection_status.error_message
+                )
+                return False
+                
+        except Exception as e:
+            self.console.print(f"[red]Connection failed: {e}[/red]")
+            return False
+
+    async def _handle_conversation_session(self, mcp_client: 'MCPClientManager',
+                                         server_name: str,
+                                         streaming_display: 'StreamingDisplay',
+                                         status_display: 'StatusDisplay') -> int:
+        """Handle the conversation session flow.
+        
+        Args:
+            mcp_client: Connected MCP client
+            server_name: Name of connected server
+            streaming_display: Streaming display component
+            status_display: Status display component
+            
+        Returns:
+            Exit code (0 for success, non-zero for error)
+        """
+        from .session import SessionManager, StreamingHandler
+        from .config import SessionConfig
+        
+        try:
+            # Create session configuration
+            session_config = SessionConfig(server_name=server_name)
+            
+            # Initialize session manager
+            session_manager = SessionManager(mcp_client, session_config)
+            
+            # Start session
+            self.console.print(f"\n[bold blue]💬 Starting conversation session[/bold blue]")
+            
+            with self.console.status("[bold green]Initializing session..."):
+                await session_manager.start_session()
+            
+            self.console.print("[green]✅ Session started successfully![/green]")
+            self.console.print()
+            
+            # Show session info
+            session_info = session_manager.get_session_info()
+            self._show_session_info(session_info)
+            
+            # Start conversation loop
+            return await self._conversation_loop(session_manager, streaming_display)
+            
+        except Exception as e:
+            self.console.print(f"[red]Session initialization failed: {e}[/red]")
+            return 1
+        finally:
+            # Cleanup session
+            if 'session_manager' in locals():
+                await session_manager.end_session()
+
+    def _show_session_info(self, session_info: Dict[str, Any]) -> None:
+        """Show session information.
+        
+        Args:
+            session_info: Session information dictionary
+        """
+        from rich.table import Table
+        
+        info_table = Table(show_header=False, box=None, padding=(0, 1))
+        info_table.add_column("Property", style="cyan", no_wrap=True)
+        info_table.add_column("Value", style="white")
+        
+        info_table.add_row("Server", session_info.get('server_name', 'Unknown'))
+        info_table.add_row("Model", session_info.get('model', 'Unknown'))
+        info_table.add_row("Tools Available", str(session_info.get('tools_loaded', 0)))
+        info_table.add_row("Status", "Active" if session_info.get('active') else "Inactive")
+        
+        from rich.panel import Panel
+        info_panel = Panel(
+            info_table,
+            title="📊 Session Information",
+            title_align="left",
+            border_style="blue",
+            padding=(0, 1),
+        )
+        
+        self.console.print(info_panel)
+        self.console.print()
+
+    async def _conversation_loop(self, session_manager: 'SessionManager',
+                               streaming_display: 'StreamingDisplay') -> int:
+        """Run the main conversation loop.
+        
+        Args:
+            session_manager: Session manager instance
+            streaming_display: Streaming display component
+            
+        Returns:
+            Exit code (0 for success, non-zero for error)
+        """
+        self.console.print("[bold cyan]💭 Ready for conversation![/bold cyan]")
+        self.console.print("[dim]Type your message and press Enter. Use '/exit' to quit, '/help' for commands.[/dim]")
+        self.console.print()
+        
+        try:
+            while True:
+                # Get user input
+                try:
+                    user_input = self.console.input("[bold green]You:[/bold green] ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    self.console.print("\n[yellow]Goodbye![/yellow]")
+                    break
+                
+                if not user_input:
+                    continue
+                
+                # Handle special commands
+                if user_input.startswith('/'):
+                    if await self._handle_session_command(user_input, session_manager):
+                        break  # Exit command
+                    continue
+                
+                # Process user input through session
+                self.console.print("\n[bold blue]Assistant:[/bold blue]")
+                
+                try:
+                    # Stream the response
+                    async for event in session_manager.process_input(user_input):
+                        self._handle_stream_event(event, streaming_display)
+                    
+                    self.console.print("\n")
+                    
+                except Exception as e:
+                    self.console.print(f"[red]Error processing input: {e}[/red]")
+                    continue
+            
+            return 0
+            
+        except Exception as e:
+            self.console.print(f"[red]Conversation error: {e}[/red]")
+            return 1
+
+    async def _handle_session_command(self, command: str, session_manager: 'SessionManager') -> bool:
+        """Handle session commands.
+        
+        Args:
+            command: Command string starting with '/'
+            session_manager: Session manager instance
+            
+        Returns:
+            True if should exit session, False otherwise
+        """
+        command = command.lower().strip()
+        
+        if command in ['/exit', '/quit', '/q']:
+            self.console.print("[yellow]Ending session...[/yellow]")
+            return True
+        
+        elif command in ['/help', '/h']:
+            self._show_session_help()
+        
+        elif command in ['/status', '/info']:
+            session_info = session_manager.get_session_info()
+            self._show_session_info(session_info)
+        
+        elif command in ['/tools']:
+            if session_manager.mcp_client.is_connected():
+                tools = await session_manager.mcp_client.list_tools()
+                from .ui import StatusDisplay
+                status_display = StatusDisplay(self.console)
+                status_display.show_tools_list(tools)
+            else:
+                self.console.print("[red]Not connected to any server[/red]")
+        
+        else:
+            self.console.print(f"[red]Unknown command: {command}[/red]")
+            self.console.print("[dim]Use '/help' to see available commands[/dim]")
+        
+        return False
+
+    def _show_session_help(self) -> None:
+        """Show session help commands."""
+        from rich.table import Table
+        from rich.panel import Panel
+        
+        help_table = Table(show_header=True, header_style="bold magenta")
+        help_table.add_column("Command", style="cyan", no_wrap=True)
+        help_table.add_column("Description", style="white")
+        
+        help_table.add_row("/help, /h", "Show this help message")
+        help_table.add_row("/status, /info", "Show session and connection status")
+        help_table.add_row("/tools", "List available MCP tools")
+        help_table.add_row("/exit, /quit, /q", "End the session")
+        
+        help_panel = Panel(
+            help_table,
+            title="💡 Session Commands",
+            title_align="left",
+            border_style="yellow",
+            padding=(0, 1),
+        )
+        
+        self.console.print(help_panel)
+
+    def _handle_stream_event(self, event: 'StreamEvent', streaming_display: 'StreamingDisplay') -> None:
+        """Handle streaming events from session.
+        
+        Args:
+            event: Stream event to handle
+            streaming_display: Streaming display component
+        """
+        from .config import StreamEventType
+        
+        if event.event_type == StreamEventType.TEXT:
+            streaming_display.stream_text_instant(str(event.data))
+        
+        elif event.event_type == StreamEventType.TOOL_USE:
+            if isinstance(event.data, dict):
+                tool_name = event.data.get('tool_name', 'Unknown')
+                args = event.data.get('arguments', {})
+                result = event.data.get('result')
+                
+                streaming_display.show_tool_usage(tool_name, args)
+                if result:
+                    streaming_display.show_tool_result(tool_name, result)
+        
+        elif event.event_type == StreamEventType.ERROR:
+            streaming_display.show_error(str(event.data))
+        
+        elif event.event_type == StreamEventType.STATUS:
+            streaming_display.show_status(str(event.data), "info")
+        
+        elif event.event_type == StreamEventType.COMPLETE:
+            # Just log completion, don't display anything
+            pass
 
 
 @click.command()
@@ -422,7 +793,8 @@ def cli(config: str, server: Optional[str], list_servers: bool,
         click.echo("EclairCP version 0.1.0")
         return
     
-    exit_code = app.run(config, server, list_servers)
+    # Run the async application
+    exit_code = asyncio.run(app.run(config, server, list_servers))
     sys.exit(exit_code)
 
 
@@ -444,6 +816,10 @@ def main(args: List[str] = None) -> int:
         return 0
     except SystemExit as e:
         return e.code if e.code is not None else 0
+    except KeyboardInterrupt:
+        console = Console()
+        console.print("\n[yellow]Operation cancelled by user[/yellow]")
+        return 0
     except Exception as e:
         console = Console()
         console.print(f"[red]Unexpected error: {e}[/red]")

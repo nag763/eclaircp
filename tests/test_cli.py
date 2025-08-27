@@ -51,10 +51,11 @@ class TestCLIApp:
         """Test contextual help for sessions."""
         self.app.show_contextual_help("session")
         captured = capsys.readouterr()
-        assert "Session Help" in captured.out
-        assert "SESSION MANAGEMENT:" in captured.out
-        assert "SESSION FEATURES:" in captured.out
-        assert "SESSION COMMANDS:" in captured.out
+        # The session help now shows session commands instead of detailed help
+        assert "Session Commands" in captured.out
+        assert "/help" in captured.out
+        assert "/status" in captured.out
+        assert "/exit" in captured.out
 
     def test_show_contextual_help_troubleshooting(self, capsys):
         """Test contextual help for troubleshooting."""
@@ -145,7 +146,8 @@ servers:
         finally:
             os.unlink(temp_path)
 
-    def test_run_list_servers_flag(self):
+    @pytest.mark.asyncio
+    async def test_run_list_servers_flag(self):
         """Test run method with list_servers flag."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write("""
@@ -157,19 +159,21 @@ servers:
             temp_path = f.name
 
         try:
-            result = self.app.run(temp_path, list_servers=True)
+            result = await self.app.run(temp_path, list_servers=True)
             assert result == 0
         finally:
             os.unlink(temp_path)
 
-    def test_run_invalid_config(self, capsys):
+    @pytest.mark.asyncio
+    async def test_run_invalid_config(self, capsys):
         """Test run method with invalid config."""
-        result = self.app.run("nonexistent.yaml")
+        result = await self.app.run("nonexistent.yaml")
         assert result == 1
         captured = capsys.readouterr()
         assert "Configuration file not found" in captured.out
 
-    def test_run_valid_config(self, capsys):
+    @pytest.mark.asyncio
+    async def test_run_valid_config(self, capsys):
         """Test run method with valid config."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write("""
@@ -181,15 +185,48 @@ servers:
             temp_path = f.name
 
         try:
-            result = self.app.run(temp_path)
-            assert result == 0
-            captured = capsys.readouterr()
-            assert "EclairCP - Elegant CLI for testing MCP servers" in captured.out
-            assert "Configuration loaded successfully!" in captured.out
+            # Mock the interactive session to exit immediately
+            with patch('eclaircp.mcp.MCPClientManager') as mock_client_class, \
+                 patch('eclaircp.session.SessionManager') as mock_session_class, \
+                 patch('eclaircp.ui.ServerSelector') as mock_selector_class, \
+                 patch('eclaircp.ui.StreamingDisplay'), \
+                 patch('eclaircp.ui.StatusDisplay'), \
+                 patch.object(self.app.console, 'input', side_effect=['/exit']):
+                
+                # Setup proper async mocks
+                from unittest.mock import AsyncMock
+                mock_client = Mock()
+                mock_client.connect = AsyncMock(return_value=True)
+                mock_client.disconnect = AsyncMock()
+                mock_client.is_connected = Mock(return_value=True)
+                mock_client.get_connection_status = Mock()
+                mock_client.list_tools = AsyncMock(return_value=[])
+                mock_client_class.return_value = mock_client
+                
+                mock_session = Mock()
+                mock_session.start_session = AsyncMock()
+                mock_session.end_session = AsyncMock()
+                mock_session.get_session_info = Mock(return_value={
+                    'active': True,
+                    'server_name': 'test-server',
+                    'model': 'test-model',
+                    'tools_loaded': 0,
+                    'mcp_connected': True,
+                    'connection_status': {}
+                })
+                mock_session_class.return_value = mock_session
+                
+                mock_selector = Mock()
+                mock_selector.select_server = Mock(return_value='test-server')
+                mock_selector_class.return_value = mock_selector
+                
+                result = await self.app.run(temp_path)
+                assert result == 0
         finally:
             os.unlink(temp_path)
 
-    def test_run_with_server_name(self, capsys):
+    @pytest.mark.asyncio
+    async def test_run_with_server_name(self, capsys):
         """Test run method with specific server name."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
             f.write("""
@@ -201,10 +238,38 @@ servers:
             temp_path = f.name
 
         try:
-            result = self.app.run(temp_path, server_name="test-server")
-            assert result == 0
-            captured = capsys.readouterr()
-            assert "Target server: test-server" in captured.out
+            # Mock the interactive session to exit immediately
+            with patch('eclaircp.mcp.MCPClientManager') as mock_client_class, \
+                 patch('eclaircp.session.SessionManager') as mock_session_class, \
+                 patch('eclaircp.ui.StreamingDisplay'), \
+                 patch('eclaircp.ui.StatusDisplay'), \
+                 patch.object(self.app.console, 'input', side_effect=['/exit']):
+                
+                # Setup proper async mocks
+                from unittest.mock import AsyncMock
+                mock_client = Mock()
+                mock_client.connect = AsyncMock(return_value=True)
+                mock_client.disconnect = AsyncMock()
+                mock_client.is_connected = Mock(return_value=True)
+                mock_client.get_connection_status = Mock()
+                mock_client.list_tools = AsyncMock(return_value=[])
+                mock_client_class.return_value = mock_client
+                
+                mock_session = Mock()
+                mock_session.start_session = AsyncMock()
+                mock_session.end_session = AsyncMock()
+                mock_session.get_session_info = Mock(return_value={
+                    'active': True,
+                    'server_name': 'test-server',
+                    'model': 'test-model',
+                    'tools_loaded': 0,
+                    'mcp_connected': True,
+                    'connection_status': {}
+                })
+                mock_session_class.return_value = mock_session
+                
+                result = await self.app.run(temp_path, server_name="test-server")
+                assert result == 0
         finally:
             os.unlink(temp_path)
 
@@ -265,8 +330,39 @@ servers:
             temp_path = f.name
 
         try:
-            result = self.runner.invoke(cli, ['-c', temp_path, '-s', 'test-server'])
-            assert result.exit_code == 0
+            # Mock all the components to prevent actual MCP connection
+            with patch('eclaircp.mcp.MCPClientManager') as mock_client_class, \
+                 patch('eclaircp.session.SessionManager') as mock_session_class, \
+                 patch('eclaircp.ui.StreamingDisplay'), \
+                 patch('eclaircp.ui.StatusDisplay'), \
+                 patch('builtins.input', side_effect=['/exit']):  # Exit immediately
+                
+                # Setup mock client with async methods
+                from unittest.mock import AsyncMock
+                mock_client = Mock()
+                mock_client.connect = AsyncMock(return_value=True)
+                mock_client.disconnect = AsyncMock()
+                mock_client.is_connected = Mock(return_value=True)
+                mock_client.get_connection_status = Mock()
+                mock_client.list_tools = AsyncMock(return_value=[])
+                mock_client_class.return_value = mock_client
+                
+                # Setup mock session with async methods
+                mock_session = Mock()
+                mock_session.start_session = AsyncMock()
+                mock_session.end_session = AsyncMock()
+                mock_session.get_session_info = Mock(return_value={
+                    'active': True,
+                    'server_name': 'test-server',
+                    'model': 'test-model',
+                    'tools_loaded': 0,
+                    'mcp_connected': True,
+                    'connection_status': {}
+                })
+                mock_session_class.return_value = mock_session
+                
+                result = self.runner.invoke(cli, ['-c', temp_path, '-s', 'test-server'])
+                assert result.exit_code == 0
         finally:
             os.unlink(temp_path)
 
@@ -281,8 +377,10 @@ servers:
         """Test CLI session help command."""
         result = self.runner.invoke(cli, ['--help-session'])
         assert result.exit_code == 0
-        assert "Session Help" in result.output
-        assert "SESSION MANAGEMENT:" in result.output
+        # The session help now shows session commands instead of detailed help
+        assert "Session Commands" in result.output
+        assert "/help" in result.output
+        assert "/exit" in result.output
 
     def test_cli_help_troubleshooting(self):
         """Test CLI troubleshooting help command."""

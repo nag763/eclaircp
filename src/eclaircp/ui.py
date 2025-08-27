@@ -16,6 +16,16 @@ from rich.markdown import Markdown
 from rich.json import JSON
 
 from .config import MCPServerConfig, StreamEvent, StreamEventType, ToolInfo
+from .exceptions import (
+    EclairCPError,
+    ConfigurationError,
+    ConnectionError,
+    SessionError,
+    ToolExecutionError,
+    ValidationError,
+    UserInterruptError,
+    ErrorCodes,
+)
 
 
 class StreamingDisplay:
@@ -284,6 +294,241 @@ class StreamingDisplay:
 
         # Default to plain text
         return Text(result, style="white")
+
+    def show_eclaircp_error(self, error: EclairCPError) -> None:
+        """
+        Display EclairCP error with full context and suggestions.
+        
+        Args:
+            error: EclairCP error instance with context and suggestions
+        """
+        # Determine error icon and color based on error type
+        error_info = self._get_error_display_info(error)
+        
+        # Create main error message
+        error_text = Text(error.message, style=error_info["style"])
+        
+        # Add error code if available
+        title = f"{error_info['icon']} {error_info['title']}"
+        if error.error_code:
+            title += f" ({error.error_code})"
+        
+        error_panel = Panel(
+            error_text,
+            title=title,
+            title_align="left",
+            border_style=error_info["border_style"],
+            padding=(0, 1),
+        )
+        self.console.print(error_panel)
+        
+        # Display context information if available
+        if error.context:
+            self._show_error_context(error.context)
+        
+        # Display suggestions if available
+        if error.suggestions:
+            self._show_error_suggestions(error.suggestions)
+        
+        # Display original error if available
+        if error.original_error:
+            self._show_original_error(error.original_error)
+    
+    def show_error_with_recovery(
+        self, 
+        error: EclairCPError, 
+        recovery_options: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """
+        Display error with recovery options and prompt user for action.
+        
+        Args:
+            error: EclairCP error instance
+            recovery_options: List of recovery option labels
+            
+        Returns:
+            Selected recovery option or None if user chooses to exit
+        """
+        from rich.prompt import Prompt
+        
+        # Show the error first
+        self.show_eclaircp_error(error)
+        
+        # If no recovery options provided, use default ones based on error type
+        if recovery_options is None:
+            recovery_options = self._get_default_recovery_options(error)
+        
+        if not recovery_options:
+            return None
+        
+        # Display recovery options
+        self.console.print("\n[bold yellow]Recovery Options:[/bold yellow]")
+        for i, option in enumerate(recovery_options, 1):
+            self.console.print(f"  {i}. {option}")
+        self.console.print(f"  {len(recovery_options) + 1}. Exit")
+        
+        # Prompt user for selection
+        try:
+            while True:
+                choice = Prompt.ask(
+                    "\nSelect an option",
+                    choices=[str(i) for i in range(1, len(recovery_options) + 2)],
+                    default=str(len(recovery_options) + 1)
+                )
+                
+                choice_num = int(choice)
+                if choice_num <= len(recovery_options):
+                    return recovery_options[choice_num - 1]
+                else:
+                    return None
+                    
+        except (KeyboardInterrupt, EOFError):
+            self.console.print("\n[red]Operation cancelled[/red]")
+            return None
+    
+    def _get_error_display_info(self, error: EclairCPError) -> Dict[str, str]:
+        """Get display information for different error types."""
+        if isinstance(error, ConfigurationError):
+            return {
+                "icon": "⚙️",
+                "title": "Configuration Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, ConnectionError):
+            return {
+                "icon": "🔌",
+                "title": "Connection Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, SessionError):
+            return {
+                "icon": "💬",
+                "title": "Session Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, ToolExecutionError):
+            return {
+                "icon": "🛠️",
+                "title": "Tool Execution Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, ValidationError):
+            return {
+                "icon": "✅",
+                "title": "Validation Error",
+                "style": "yellow",
+                "border_style": "yellow"
+            }
+        elif isinstance(error, UserInterruptError):
+            return {
+                "icon": "⏹️",
+                "title": "Operation Cancelled",
+                "style": "blue",
+                "border_style": "blue"
+            }
+        else:
+            return {
+                "icon": "❌",
+                "title": "Error",
+                "style": "red",
+                "border_style": "red"
+            }
+    
+    def _show_error_context(self, context: Dict[str, Any]) -> None:
+        """Display error context information."""
+        if not context:
+            return
+        
+        context_lines = []
+        for key, value in context.items():
+            # Format the key nicely
+            formatted_key = key.replace("_", " ").title()
+            context_lines.append(f"[bold]{formatted_key}:[/bold] {value}")
+        
+        context_text = "\n".join(context_lines)
+        context_panel = Panel(
+            context_text,
+            title="📋 Context",
+            title_align="left",
+            border_style="blue",
+            padding=(0, 1),
+        )
+        self.console.print(context_panel)
+    
+    def _show_error_suggestions(self, suggestions: List[str]) -> None:
+        """Display error suggestions."""
+        if not suggestions:
+            return
+        
+        suggestions_text = "\n".join([f"• {suggestion}" for suggestion in suggestions])
+        suggestions_panel = Panel(
+            suggestions_text,
+            title="💡 Suggestions",
+            title_align="left",
+            border_style="yellow",
+            padding=(0, 1),
+        )
+        self.console.print(suggestions_panel)
+    
+    def _show_original_error(self, original_error: Exception) -> None:
+        """Display original error information."""
+        original_text = f"[dim]{type(original_error).__name__}: {str(original_error)}[/dim]"
+        original_panel = Panel(
+            original_text,
+            title="🔍 Original Error",
+            title_align="left",
+            border_style="dim",
+            padding=(0, 1),
+        )
+        self.console.print(original_panel)
+    
+    def _get_default_recovery_options(self, error: EclairCPError) -> List[str]:
+        """Get default recovery options based on error type."""
+        if isinstance(error, ConfigurationError):
+            return [
+                "Edit configuration file",
+                "Create new configuration",
+                "Use default configuration",
+                "Retry with current configuration"
+            ]
+        elif isinstance(error, ConnectionError):
+            return [
+                "Retry connection",
+                "Select different server",
+                "Check server configuration",
+                "Continue without server"
+            ]
+        elif isinstance(error, SessionError):
+            return [
+                "Restart session",
+                "Change agent model",
+                "Clear session context",
+                "Continue with limited functionality"
+            ]
+        elif isinstance(error, ToolExecutionError):
+            return [
+                "Retry tool execution",
+                "Skip this tool",
+                "Use alternative approach",
+                "Continue without tool result"
+            ]
+        elif isinstance(error, ValidationError):
+            return [
+                "Correct the input",
+                "Use default value",
+                "Skip validation",
+                "Provide alternative input"
+            ]
+        else:
+            return [
+                "Retry operation",
+                "Continue anyway",
+                "Get help"
+            ]
 
 
 class ServerSelector:
@@ -635,6 +880,200 @@ class StatusDisplay:
                 padding=(0, 1),
             )
             self.console.print(suggestions_panel)
+    
+    def show_error_with_recovery(
+        self, 
+        error: EclairCPError, 
+        recovery_options: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """
+        Display error with recovery options and prompt user for action.
+        
+        Args:
+            error: EclairCP error instance
+            recovery_options: List of recovery option labels
+            
+        Returns:
+            Selected recovery option or None if user chooses to exit
+        """
+        # Show the error first
+        self.show_eclaircp_error(error)
+        
+        # If no recovery options provided, use default ones based on error type
+        if recovery_options is None:
+            recovery_options = self._get_default_recovery_options(error)
+        
+        if not recovery_options:
+            return None
+        
+        # Display recovery options
+        self.console.print("\n[bold yellow]Recovery Options:[/bold yellow]")
+        for i, option in enumerate(recovery_options, 1):
+            self.console.print(f"  {i}. {option}")
+        self.console.print(f"  {len(recovery_options) + 1}. Exit")
+        
+        # Prompt user for selection
+        try:
+            while True:
+                choice = Prompt.ask(
+                    "\nSelect an option",
+                    choices=[str(i) for i in range(1, len(recovery_options) + 2)],
+                    default=str(len(recovery_options) + 1)
+                )
+                
+                choice_num = int(choice)
+                if choice_num <= len(recovery_options):
+                    return recovery_options[choice_num - 1]
+                else:
+                    return None
+                    
+        except (KeyboardInterrupt, EOFError):
+            self.console.print("\n[red]Operation cancelled[/red]")
+            return None
+    
+    def _get_error_display_info(self, error: EclairCPError) -> Dict[str, str]:
+        """Get display information for different error types."""
+        if isinstance(error, ConfigurationError):
+            return {
+                "icon": "⚙️",
+                "title": "Configuration Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, ConnectionError):
+            return {
+                "icon": "🔌",
+                "title": "Connection Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, SessionError):
+            return {
+                "icon": "💬",
+                "title": "Session Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, ToolExecutionError):
+            return {
+                "icon": "🛠️",
+                "title": "Tool Execution Error",
+                "style": "red",
+                "border_style": "red"
+            }
+        elif isinstance(error, ValidationError):
+            return {
+                "icon": "✅",
+                "title": "Validation Error",
+                "style": "yellow",
+                "border_style": "yellow"
+            }
+        elif isinstance(error, UserInterruptError):
+            return {
+                "icon": "⏹️",
+                "title": "Operation Cancelled",
+                "style": "blue",
+                "border_style": "blue"
+            }
+        else:
+            return {
+                "icon": "❌",
+                "title": "Error",
+                "style": "red",
+                "border_style": "red"
+            }
+    
+    def _show_error_context(self, context: Dict[str, Any]) -> None:
+        """Display error context information."""
+        if not context:
+            return
+        
+        context_lines = []
+        for key, value in context.items():
+            # Format the key nicely
+            formatted_key = key.replace("_", " ").title()
+            context_lines.append(f"[bold]{formatted_key}:[/bold] {value}")
+        
+        context_text = "\n".join(context_lines)
+        context_panel = Panel(
+            context_text,
+            title="📋 Context",
+            title_align="left",
+            border_style="blue",
+            padding=(0, 1),
+        )
+        self.console.print(context_panel)
+    
+    def _show_error_suggestions(self, suggestions: List[str]) -> None:
+        """Display error suggestions."""
+        if not suggestions:
+            return
+        
+        suggestions_text = "\n".join([f"• {suggestion}" for suggestion in suggestions])
+        suggestions_panel = Panel(
+            suggestions_text,
+            title="💡 Suggestions",
+            title_align="left",
+            border_style="yellow",
+            padding=(0, 1),
+        )
+        self.console.print(suggestions_panel)
+    
+    def _show_original_error(self, original_error: Exception) -> None:
+        """Display original error information."""
+        original_text = f"[dim]{type(original_error).__name__}: {str(original_error)}[/dim]"
+        original_panel = Panel(
+            original_text,
+            title="🔍 Original Error",
+            title_align="left",
+            border_style="dim",
+            padding=(0, 1),
+        )
+        self.console.print(original_panel)
+    
+    def _get_default_recovery_options(self, error: EclairCPError) -> List[str]:
+        """Get default recovery options based on error type."""
+        if isinstance(error, ConfigurationError):
+            return [
+                "Edit configuration file",
+                "Create new configuration",
+                "Use default configuration",
+                "Retry with current configuration"
+            ]
+        elif isinstance(error, ConnectionError):
+            return [
+                "Retry connection",
+                "Select different server",
+                "Check server configuration",
+                "Continue without server"
+            ]
+        elif isinstance(error, SessionError):
+            return [
+                "Restart session",
+                "Change agent model",
+                "Clear session context",
+                "Continue with limited functionality"
+            ]
+        elif isinstance(error, ToolExecutionError):
+            return [
+                "Retry tool execution",
+                "Skip this tool",
+                "Use alternative approach",
+                "Continue without tool result"
+            ]
+        elif isinstance(error, ValidationError):
+            return [
+                "Correct the input",
+                "Use default value",
+                "Skip validation",
+                "Provide alternative input"
+            ]
+        else:
+            return [
+                "Retry operation",
+                "Continue anyway",
+                "Get help"
+            ]
 
     def _show_connected_status(
         self,

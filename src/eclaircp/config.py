@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator, field_serializer
+from .exceptions import ConfigurationError, create_configuration_error
 
 
 class MCPServerConfig(BaseModel):
@@ -120,9 +121,7 @@ class ToolInfo(BaseModel):
         return v.strip()
 
 
-class ConfigurationError(Exception):
-    """Configuration-related errors."""
-    pass
+
 
 
 class ConfigManager:
@@ -144,20 +143,34 @@ class ConfigManager:
         import os
         
         if not os.path.exists(path):
-            raise ConfigurationError(f"Configuration file not found: {path}")
+            raise create_configuration_error(
+                f"Configuration file not found: {path}",
+                config_path=path
+            )
         
         try:
             with open(path, 'r', encoding='utf-8') as file:
                 config_data = yaml.safe_load(file)
         except yaml.YAMLError as e:
-            raise ConfigurationError(f"Invalid YAML in configuration file: {e}") from e
+            raise create_configuration_error(
+                f"Invalid YAML in configuration file: {e}",
+                config_path=path,
+                original_error=e
+            ) from e
         except IOError as e:
-            raise ConfigurationError(f"Cannot read configuration file: {e}") from e
+            raise create_configuration_error(
+                f"Cannot read configuration file: {e}",
+                config_path=path,
+                original_error=e
+            ) from e
         
         if config_data is None:
-            raise ConfigurationError("Configuration file is empty")
+            raise create_configuration_error(
+                "Configuration file is empty",
+                config_path=path
+            )
         
-        return self.validate_config(config_data)
+        return self.validate_config(config_data, config_path=path)
 
     def save_config(self, config: ConfigFile, path: str) -> None:
         """Save configuration file with Pydantic serialization.
@@ -180,13 +193,18 @@ class ConfigManager:
             with open(path, 'w', encoding='utf-8') as file:
                 yaml.dump(config_data, file, default_flow_style=False, indent=2)
         except IOError as e:
-            raise ConfigurationError(f"Cannot write configuration file: {e}") from e
+            raise create_configuration_error(
+                f"Cannot write configuration file: {e}",
+                config_path=path,
+                original_error=e
+            ) from e
 
-    def validate_config(self, config_data: Dict) -> ConfigFile:
+    def validate_config(self, config_data: Dict, config_path: Optional[str] = None) -> ConfigFile:
         """Validate configuration using Pydantic models.
         
         Args:
             config_data: Raw configuration data dictionary
+            config_path: Path to the configuration file (for error context)
             
         Returns:
             ConfigFile: Validated configuration object
@@ -207,4 +225,8 @@ class ConfigManager:
             
             return ConfigFile(**config_data)
         except Exception as e:
-            raise ConfigurationError(f"Configuration validation failed: {e}") from e
+            raise create_configuration_error(
+                f"Configuration validation failed: {e}",
+                config_path=config_path,
+                original_error=e
+            ) from e
